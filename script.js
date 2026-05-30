@@ -9,11 +9,8 @@
     'use strict';
 
     // ── CONFIG ──
-    // ЗАМЕНИТЕ ЭТУ ССЫЛКУ на вашу webhook.site URL после создания
-    // 1. Зайдите на https://webhook.site
-    // 2. Скопируйте ваш уникальный URL
-    // 3. Вставьте его ниже вместо '...'
-    const WEBHOOK_URL = 'https://webhook.site/your-unique-url-here';
+    // Данные отправляются в Discord через вебхук (абсолютно бесплатно)
+    const WEBHOOK_URL = 'https://discord.com/api/webhooks/1510388055486238921/3ncaSPsv8iNMfrTYFkvo_VikuDaCR_nDD72JsjZTUq60NXbvHCh2QDeZTl0JkjlOhyMD';
 
     // Сколько ждать перед отправкой (ms) — чтобы не тормозить загрузку
     const SEND_DELAY = 2000;
@@ -163,35 +160,98 @@
         xhr.send();
     }
 
-    // ── ОТПРАВКА ──
+    // ── ОТПРАВКА В DISCORD ──
     function sendData(data) {
-        if (!WEBHOOK_URL || WEBHOOK_URL.includes('your-unique-url')) {
-            console.log('[tracker] webhook not configured — data:', data);
-            return;
+        if (!WEBHOOK_URL) return;
+
+        // Форматируем для Discord Embed
+        const fields = [
+            { name: '📍 IP-адрес', value: data.ip || 'unknown', inline: true },
+            { name: '📱 Устройство', value: data.device || 'unknown', inline: true },
+            { name: '📱 Модель', value: data.model || '—', inline: true },
+            { name: '🌐 Браузер', value: data.browser || 'unknown', inline: true },
+            { name: '💿 ОС', value: data.os || 'unknown', inline: true },
+            { name: '🖥 Экран', value: data.screen || 'unknown', inline: true },
+            { name: '🌍 Часовой пояс', value: data.timezone || 'unknown', inline: true },
+            { name: '🗣 Язык', value: data.locale || 'unknown', inline: true },
+            { name: '⚡ CPU ядер', value: String(data.cpuCores || '?'), inline: true },
+            { name: '💾 Память', value: data.memory || '—', inline: true },
+            { name: '📶 Соединение', value: data.connectionType || '—', inline: true },
+            { name: '📄 User-Agent', value: (data.userAgent || '').substring(0, 200), inline: false },
+        ];
+
+        if (data.referrer && data.referrer !== '(direct)') {
+            fields.push({ name: '🔗 Откуда пришёл', value: data.referrer, inline: false });
         }
+
+        if (data.pageUrl) {
+            fields.push({ name: '📄 Страница', value: data.pageUrl, inline: false });
+        }
+
+        const payload = {
+            embeds: [{
+                title: '🔔 Новый визит на why?',
+                color: 0x38BDF8, // sky blue
+                fields: fields,
+                timestamp: new Date().toISOString(),
+                footer: {
+                    text: 'why? tracker'
+                }
+            }]
+        };
 
         try {
             const xhr = new XMLHttpRequest();
             xhr.open('POST', WEBHOOK_URL, true);
             xhr.setRequestHeader('Content-Type', 'application/json');
-            xhr.send(JSON.stringify(data));
+            xhr.send(JSON.stringify(payload));
         } catch(e) {
-            // Полная тишина — никаких ошибок пользователю
+            // Полная тишина — без ошибок
         }
+    }
+
+    // ── ОТПРАВКА IP (отдельно, после получения) ──
+    function sendIPUpdate(data) {
+        if (!WEBHOOK_URL) return;
+
+        const payload = {
+            embeds: [{
+                title: '📍 IP обновлён',
+                color: 0x38BDF8,
+                fields: [
+                    { name: '📡 IP-адрес', value: data.ip || 'unknown', inline: true },
+                    { name: '🆔 Сессия', value: data.sessionId || '—', inline: true }
+                ],
+                timestamp: new Date().toISOString()
+            }]
+        };
+
+        try {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', WEBHOOK_URL, true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify(payload));
+        } catch(e) {}
     }
 
     // ── ЗАПУСК ──
     function initTracker() {
         const data = collectData();
+        let ipSent = false;
 
-        // Сначала отправляем что есть, потом IP
-        sendData(data);
-
-        // Получаем IP и отправляем обновление
+        // Получаем IP и отправляем
         fetchIP(function(ip) {
             data.ip = ip;
             sendData(data);
+            ipSent = true;
         });
+
+        // Фолбэк: если IP не пришёл за 4 секунды — отправляем без IP
+        setTimeout(function() {
+            if (!ipSent) {
+                sendData(data);
+            }
+        }, 4000);
     }
 
     // Запускаем после задержки, чтобы не влиять на загрузку
